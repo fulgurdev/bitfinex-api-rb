@@ -41,11 +41,13 @@ module Bitfinex
     INFO_MAINTENANCE_START = 20060
     INFO_MAINTENANCE_END = 20061
 
-    FLAG_DEC_S = 8,         # enables all decimals as strings
-    FLAG_TIME_S = 32,       # enables all timestamps as strings
-    FLAG_TIMESTAMP = 32768, # timestamps in milliseconds
-    FLAG_SEQ_ALL = 65536,   # enable sequencing
-    FLAG_CHECKSUM = 131072  # enable OB checksums, top 25 levels per side
+    FLAG_DEC_S = 8 # enables all decimals as strings
+    FLAG_TIME_S = 32 # enables all timestamps as strings
+    FLAG_TIMESTAMP = 32768 # timestamps in milliseconds
+    FLAG_SEQ_ALL = 65536 # enable sequencing
+    FLAG_CHECKSUM = 131072 # enable OB checksums, top 25 levels per side
+
+    attr_reader :is_authenticated
 
     ###
     # Creates a new instance of the class
@@ -114,26 +116,32 @@ module Bitfinex
     ###
     # Opens the websocket client inside an eventmachine run block
     ###
-    def open!
+    def open!(&block)
       if @is_open
         raise Exception, 'already open'
       end
 
       EM.run {
-        @ws = Faye::WebSocket::Client.new(@url)
-
-        @ws.on(:open) do |e|
-          on_open(e)
-        end
-
-        @ws.on(:message) do |e|
-          on_message(e)
-        end
-
-        @ws.on(:close) do |e|
-          on_close(e)
-        end
+        open_in_event_machine(&block)
       }
+    end
+
+    def open_in_event_machine(&block)
+      @ws = Faye::WebSocket::Client.new(@url)
+
+      @ws.on(:open) do |e|
+        on_open(e)
+      end
+
+      @ws.on(:message) do |e|
+        on_message(e)
+      end
+
+      @ws.on(:close) do |e|
+        on_close(e)
+      end
+
+      block.call(@ws) if block_given?
     end
 
     ###
@@ -141,6 +149,7 @@ module Bitfinex
     ###
     def close!
       @ws.close
+      @is_authenticated = false
     end
 
     def process_message (msg) # :nodoc:
@@ -446,9 +455,9 @@ module Bitfinex
     def subscribe (channel, params = {})
       @l.info 'subscribing to channel %s [%s]' % [channel, params]
       @ws.send(JSON.generate(params.merge({
-        :event => 'subscribe',
-        :channel => channel,
-      })))
+                                            :event => 'subscribe',
+                                            :channel => channel,
+                                          })))
     end
 
     ###
@@ -586,9 +595,9 @@ module Bitfinex
       return unless @is_open
 
       @ws.send(JSON.generate({
-        :event => 'conf',
-        :flags => @enabled_flags | flag
-      }))
+                               :event => 'conf',
+                               :flags => @enabled_flags | flag
+                             }))
     end
 
     ###
@@ -638,14 +647,14 @@ module Bitfinex
       sig = sign(auth_payload)
 
       @ws.send(JSON.generate({
-        :event => 'auth',
-        :apiKey => @api_key,
-        :authSig => sig,
-        :authPayload => auth_payload,
-        :authNonce => auth_nonce,
-        :dms => dms,
-        :calc => calc
-      }))
+                               :event => 'auth',
+                               :apiKey => @api_key,
+                               :authSig => sig,
+                               :authPayload => auth_payload,
+                               :authNonce => auth_nonce,
+                               :dms => dms,
+                               :calc => calc
+                             }))
     end
 
     def new_nonce # :nodoc:
